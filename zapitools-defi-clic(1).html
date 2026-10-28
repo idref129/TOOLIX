@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Défi clic — ZapiTools</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; display: grid; place-items: center;
+    padding: 20px; font-family: system-ui, Arial, sans-serif;
+    color: #102a56; background: linear-gradient(135deg,#eaf5ff,#f5efff);
+  }
+  main {
+    width: min(100%, 560px); background: white; border-radius: 24px;
+    padding: 28px; text-align: center; box-shadow: 0 16px 45px #12305b1a;
+  }
+  .logo { font-size: 14px; font-weight: 800; color: #1687ff; letter-spacing: .08em; }
+  h1 { margin: 10px 0; font-size: clamp(28px, 6vw, 42px); }
+  p { line-height: 1.5; color: #52627a; }
+  .stats { display: flex; gap: 12px; justify-content: center; margin: 22px 0; }
+  .stat { background: #f1f6ff; border-radius: 14px; padding: 12px 18px; min-width: 115px; }
+  .stat strong { display: block; font-size: 28px; color: #1468e8; }
+  button {
+    border: 0; border-radius: 14px; padding: 15px 22px; font-size: 17px;
+    font-weight: 750; cursor: pointer; background: #1479f8; color: white;
+    box-shadow: 0 7px 0 #0754b8; transition: transform .08s;
+  }
+  button:active { transform: translateY(4px); box-shadow: 0 3px 0 #0754b8; }
+  button:disabled { cursor: default; opacity: .65; }
+  #message { min-height: 28px; font-weight: 700; color: #1468e8; margin-top: 18px; }
+  footer { font-size: 12px; color: #8390a4; margin-top: 22px; }
+</style>
+</head>
+<body>
+<main>
+  <div class="logo">⚡ ZAPITOOLS</div>
+  <h1>Défi clic !</h1>
+  <p>Clique sur le bouton autant de fois que possible en <b>10 secondes</b>. Prêt à battre ton record ?</p>
+  <div class="stats">
+    <div class="stat">Temps<strong id="time">10</strong></div>
+    <div class="stat">Clics<strong id="score">0</strong></div>
+  </div>
+  <button id="play">▶ Commencer</button>
+  <div id="message" aria-live="polite">Appuie sur « Commencer » pour jouer !</div>
+  <footer>Mini-jeu gratuit • Pas d'inscription nécessaire</footer>
+</main>
+<script>
+(() => {
+  const play = document.getElementById('play');
+  const timeEl = document.getElementById('time');
+  const scoreEl = document.getElementById('score');
+  const message = document.getElementById('message');
+  let score = 0, timeLeft = 10, running = false, timer = null;
+
+  play.addEventListener('click', () => {
+    if (running) {
+      score++;
+      scoreEl.textContent = score;
+      return;
+    }
+    score = 0; timeLeft = 10; running = true;
+    scoreEl.textContent = score;
+    timeEl.textContent = timeLeft;
+    message.textContent = 'Vite, clique !';
+    play.textContent = '⚡ CLIQUE !';
+    play.disabled = false;
+    timer = setInterval(() => {
+      timeLeft--;
+      timeEl.textContent = timeLeft;
+      if (timeLeft <= 0) {
+        clearInterval(timer);
+        running = false;
+        play.textContent = '↻ Rejouer';
+        message.textContent = `Terminé ! Tu as fait ${score} clic${score > 1 ? 's' : ''}. Essaie de battre ton record !`;
+      }
+    }, 1000);
+  });
+})();
+</script>
+</body>
+</html>
