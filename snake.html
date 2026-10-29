@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<meta name="theme-color" content="#10172b">
+<title>Snake — Toolix</title>
+<style>
+:root {
+  --bg: #10172b;
+  --panel: #19233c;
+  --green: #8dfc76;
+  --text: #f4f7ff;
+  --muted: #a7b3ce;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  min-height: 100vh;
+  padding: 22px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    radial-gradient(ellipse at top, #23365b 0%, transparent 60%),
+    var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, sans-serif;
+}
+main {
+  width: min(100%, 510px);
+  text-align: center;
+}
+.brand {
+  color: var(--green);
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: 4px;
+}
+h1 {
+  font-size: clamp(36px, 9vw, 54px);
+  margin: 8px 0;
+  letter-spacing: -2px;
+}
+.intro { color: var(--muted); margin: 0 0 20px; }
+.stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.stat {
+  background: var(--panel);
+  border: 1px solid #34415e;
+  border-radius: 15px;
+  padding: 11px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.stat strong {
+  display: block;
+  color: var(--green);
+  font-size: 25px;
+}
+.gamebox {
+  position: relative;
+  background: #0b1221;
+  padding: 8px;
+  border: 1px solid #34415e;
+  border-radius: 19px;
+  box-shadow: 0 18px 45px #0005;
+}
+canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1;
+  border-radius: 11px;
+  touch-action: none;
+}
+#overlay {
+  position: absolute;
+  inset: 8px;
+  border-radius: 11px;
+  background: #0b1221d9;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+#overlay.hidden { display: none; }
+#overlay h2 { font-size: 30px; margin: 0 0 8px; }
+#overlay p { color: var(--muted); line-height: 1.5; margin: 0 0 16px; }
+button {
+  border: 0;
+  border-radius: 13px;
+  padding: 13px 20px;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+  color: #10172b;
+  background: var(--green);
+  transition: transform .1s, filter .1s;
+  -webkit-tap-highlight-color: transparent;
+}
+button:active { transform: scale(.96); filter: brightness(.9); }
+.actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 13px;
+}
+.actions button { flex: 1; }
+#pause {
+  background: #293653;
+  color: var(--text);
+  border: 1px solid #43516e;
+}
+.dpad {
+  width: 180px;
+  margin: 18px auto 0;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(2, 54px);
+  gap: 6px;
+  user-select: none;
+}
+.dpad button {
+  padding: 0;
+  font-size: 23px;
+  background: #263452;
+  color: white;
+  border: 1px solid #405172;
+  touch-action: manipulation;
+}
+.dpad .up { grid-column: 2; grid-row: 1; }
+.dpad .left { grid-column: 1; grid-row: 2; }
+.dpad .down { grid-column: 2; grid-row: 2; }
+.dpad .right { grid-column: 3; grid-row: 2; }
+.help {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.7;
+  margin-top: 18px;
+}
+footer { margin-top: 18px; color: #7f8daa; font-size: 12px; }
+@media (min-width: 600px) {
+  body { padding: 30px 20px; }
+}
+</style>
+</head>
+<body>
+<main>
+  <div class="brand">⚡ TOOLIX</div>
+  <h1>🐍 Snake</h1>
+  <p class="intro">Mange les pommes, grandis et bats ton record !</p>
+
+  <div class="stats">
+    <div class="stat">SCORE<strong id="score">0</strong></div>
+    <div class="stat">RECORD<strong id="best">0</strong></div>
+  </div>
+
+  <div class="gamebox">
+    <canvas id="game" width="400" height="400"
+      aria-label="Plateau du jeu Snake"></canvas>
+    <div id="overlay">
+      <h2 id="overlayTitle">Prêt à jouer ?</h2>
+      <p id="overlayText">Attrape les pommes rouges et évite les murs et ton propre corps.</p>
+      <button id="start">▶ Jouer</button>
+    </div>
+  </div>
+
+  <div class="actions">
+    <button id="restart">↻ Rejouer</button>
+    <button id="pause">Ⅱ Pause</button>
+  </div>
+
+  <div class="dpad" aria-label="Commandes du serpent">
+    <button class="up" data-dir="up" aria-label="Haut">▲</button>
+    <button class="left" data-dir="left" aria-label="Gauche">◀</button>
+    <button class="down" data-dir="down" aria-label="Bas">▼</button>
+    <button class="right" data-dir="right" aria-label="Droite">▶</button>
+  </div>
+
+  <p class="help">
+    💻 Ordinateur : utilise les flèches du clavier.<br>
+    📱 Téléphone : utilise les boutons ou glisse ton doigt sur le plateau.<br>
+    🍎 Chaque pomme rapporte 10 points.
+  </p>
+  <footer>Mini-jeu gratuit • Toolix</footer>
+</main>
+
+<script>
+(() => {
+  const canvas = document.getElementById("game");
+  const ctx = canvas.getContext("2d");
+  const scoreEl = document.getElementById("score");
+  const bestEl = document.getElementById("best");
+  const overlay = document.getElementById("overlay");
+  const overlayTitle = document.getElementById("overlayTitle");
+  const overlayText = document.getElementById("overlayText");
+  const startBtn = document.getElementById("start");
+  const restartBtn = document.getElementById("restart");
+  const pauseBtn = document.getElementById("pause");
+
+  const CELLS = 20;
+  const SIZE = canvas.width / CELLS;
+  const COLORS = {
+    bg: "#0b1221",
+    grid: "#17243a",
+    snake: "#8dfc76",
+    head: "#c2ffae",
+    apple: "#ff617c"
+  };
+
+  let snake, apple, direction, nextDirection;
+  let score = 0;
+  let best = 0;
+  let running = false;
+  let gameOver = false;
+  let paused = false;
+  let timer = null;
+  let lastTouchX = 0;
+  let lastTouchY = 0;
+
+  try {
+    best = Number(localStorage.getItem("toolixSnakeBest")) || 0;
+  } catch (_) {}
+  bestEl.textContent = best;
+
+  function randomApple() {
+    let pos;
+    do {
+      pos = {
+        x: Math.floor(Math.random() * CELLS),
+        y: Math.floor(Math.random() * CELLS)
+      };
+    } while (snake.some(part => part.x === pos.x && part.y === pos.y));
+    return pos;
+  }
+
+  function reset() {
+    clearInterval(timer);
+    snake = [
+      { x: 9, y: 10 },
+      { x: 8, y: 10 },
+      { x: 7, y: 10 }
+    ];
+    direction = { x: 1, y: 0 };
+    nextDirection = { x: 1, y: 0 };
+    score = 0;
+    running = false;
+    gameOver = false;
+    paused = false;
+    apple = randomApple();
+    scoreEl.textContent = score;
+    pauseBtn.textContent = "Ⅱ Pause";
+    draw();
+  }
+
+  function roundedCell(x, y, color, inset = 2) {
+    const px = x * SIZE + inset;
+    const py = y * SIZE + inset;
+    const s = SIZE - inset * 2;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.roundRect(px, py, s, s, 5);
+    ctx.fill();
+  }
+
+  function draw() {
+    ctx.fillStyle = COLORS.bg;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    ctx.strokeStyle = COLORS.grid;
+    ctx.lineWidth = 1;
+    for (let i = 0; i <= CELLS; i++) {
+      const p = i * SIZE;
+      ctx.beginPath();
+      ctx.moveTo(p, 0);
+      ctx.lineTo(p, canvas.height);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(0, p);
+      ctx.lineTo(canvas.width, p);
+      ctx.stroke();
+    }
+
+    // Pomme
+    const ax = apple.x * SIZE + SIZE / 2;
+    const ay = apple.y * SIZE + SIZE / 2;
+    ctx.fillStyle = COLORS.apple;
+    ctx.beginPath();
+    ctx.arc(ax, ay + 1, SIZE * 0.34, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#a9ff8f";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(ax, ay - 5);
+    ctx.lineTo(ax + 3, ay - 9);
+    ctx.stroke();
+
+    // Serpent
+    snake.forEach((part, index) => {
+      roundedCell(part.x, part.y,
+        index === 0 ? COLORS.head : COLORS.snake,
+        index === 0 ? 1.5 : 2.5);
+    });
+
+    // Yeux
+    const head = snake[0];
+    ctx.fillStyle = "#17233b";
+    const eyeOffsetX = direction.x === 0 ? 4 : direction.x * 4;
+    const eyeOffsetY = direction.y === 0 ? 4 : direction.y * 4;
+    const ex = head.x * SIZE + SIZE / 2;
+    const ey = head.y * SIZE + SIZE / 2;
+    ctx.beginPath();
+    ctx.arc(ex + eyeOffsetX + (direction.y !== 0 ? -4 : 0),
+            ey + eyeOffsetY + (direction.x !== 0 ? -4 : 0), 2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(ex + eyeOffsetX + (direction.y !== 0 ? 4 : 0),
+            ey + eyeOffsetY + (direction.x !== 0 ? 4 : 0), 2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  function showOverlay(title, text, buttonText) {
+    overlayTitle.textContent = title;
+    overlayText.textContent = text;
+    startBtn.textContent = buttonText;
+    overlay.classList.remove("hidden");
+  }
+
+  function hideOverlay() {
+    overlay.classList.add("hidden");
+  }
+
+  function start() {
+    if (gameOver) reset();
+    if (running && paused) {
+      paused = false;
+      pauseBtn.textContent = "Ⅱ Pause";
+      hideOverlay();
+      timer = setInterval(tick, 145);
+      return;
+    }
+    if (running) return;
+    running = true;
+    paused = false;
+    hideOverlay();
+    pauseBtn.textContent = "Ⅱ Pause";
+    clearInterval(timer);
+    timer = setInterval(tick, 145);
+  }
+
+  function endGame() {
+    clearInterval(timer);
+    running = false;
+    gameOver = true;
+    if (score > best) {
+      best = score;
+      bestEl.textContent = best;
+      try {
+        localStorage.setItem("toolixSnakeBest", String(best));
+      } catch (_) {}
+    }
+    showOverlay("💥 Perdu !", `Score : ${score}. ${score > 0 ? "Bien joué !" : "Essaie encore !"}`, "↻ Rejouer");
+  }
+
+  function tick() {
+    if (!running || paused) return;
+    direction = nextDirection;
+
+    const head = {
+      x: snake[0].x + direction.x,
+      y: snake[0].y + direction.y
+    };
+
+    const eating = head.x === apple.x && head.y === apple.y;
+    const body = eating ? snake : snake.slice(0, -1);
+
+    if (
+      head.x < 0 || head.x >= CELLS ||
+      head.y < 0 || head.y >= CELLS ||
+      body.some(part => part.x === head.x && part.y === head.y)
+    ) {
+      endGame();
+      return;
+    }
+
+    snake.unshift(head);
+
+    if (eating) {
+      score += 10;
+      scoreEl.textContent = score;
+      apple = randomApple();
+    } else {
+      snake.pop();
+    }
+
+    draw();
+  }
+
+  function changeDirection(dir) {
+    const dirs = {
+      up: { x: 0, y: -1 },
+      down: { x: 0, y: 1 },
+      left: { x: -1, y: 0 },
+      right: { x: 1, y: 0 }
+    };
+    const chosen = dirs[dir];
+    if (!chosen) return;
+
+    // Interdit de faire demi-tour directement.
+    if (chosen.x === -direction.x && chosen.y === -direction.y) return;
+    nextDirection = chosen;
+
+    if (!running && !gameOver) start();
+  }
+
+  document.addEventListener("keydown", event => {
+    const keys = {
+      ArrowUp: "up",
+      ArrowDown: "down",
+      ArrowLeft: "left",
+      ArrowRight: "right",
+      w: "up", W: "up",
+      s: "down", S: "down",
+      a: "left", A: "left",
+      d: "right", D: "right"
+    };
+    if (keys[event.key]) {
+      event.preventDefault();
+      changeDirection(keys[event.key]);
+    } else if (event.code === "Space") {
+      event.preventDefault();
+      if (!running && !gameOver) start();
+      else if (running) togglePause();
+      else start();
+    }
+  });
+
+  document.querySelectorAll("[data-dir]").forEach(button => {
+    button.addEventListener("pointerdown", event => {
+      event.preventDefault();
+      changeDirection(button.dataset.dir);
+    });
+  });
+
+  canvas.addEventListener("pointerdown", event => {
+    lastTouchX = event.clientX;
+    lastTouchY = event.clientY;
+  });
+
+  canvas.addEventListener("pointerup", event => {
+    const dx = event.clientX - lastTouchX;
+    const dy = event.clientY - lastTouchY;
+    if (Math.max(Math.abs(dx), Math.abs(dy)) < 12) return;
+    if (Math.abs(dx) > Math.abs(dy)) {
+      changeDirection(dx > 0 ? "right" : "left");
+    } else {
+      changeDirection(dy > 0 ? "down" : "up");
+    }
+  });
+
+  function togglePause() {
+    if (!running && !paused) return;
+    if (gameOver) return;
+
+    paused = !paused;
+    clearInterval(timer);
+
+    if (paused) {
+      pauseBtn.textContent = "▶ Reprendre";
+      showOverlay("⏸ Pause", "Reprends quand tu es prêt !", "▶ Reprendre");
+    } else {
+      pauseBtn.textContent = "Ⅱ Pause";
+      hideOverlay();
+      timer = setInterval(tick, 145);
+    }
+  }
+
+  startBtn.addEventListener("click", start);
+  restartBtn.addEventListener("click", () => {
+    reset();
+    start();
+  });
+  pauseBtn.addEventListener("click", togglePause);
+
+  reset();
+})();
+</script>
+</body>
+</html>
