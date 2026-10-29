@@ -54,6 +54,7 @@ section{margin-top:28px;border-top:1px solid #e5ebf4;padding-top:14px}
 <script>
 (() => {
   const API = "https://hshvymkqupzaincpatit.supabase.co/functions/v1/leaderboard-api";
+  const API_KEY = "sb_publishable_hVjeATY4pky2ZsW_Tmfkpg_v61IhmTi";
   const play = document.getElementById("play");
   const timeEl = document.getElementById("time");
   const scoreEl = document.getElementById("score");
@@ -71,7 +72,9 @@ section{margin-top:28px;border-top:1px solid #e5ebf4;padding-top:14px}
     list.appendChild(loading);
 
     try {
-      const response = await fetch(API);
+      const response = await fetch(API, {
+  headers: { "apikey": API_KEY }
+});
       if (!response.ok) throw new Error("HTTP " + response.status);
       const result = await response.json();
       list.replaceChildren();
@@ -104,10 +107,13 @@ section{margin-top:28px;border-top:1px solid #e5ebf4;padding-top:14px}
 
     try {
       const response = await fetch(API, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ nickname: name, score })
-      });
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    "apikey": API_KEY
+  },
+  body: JSON.stringify({ nickname: name, score })
+});
       const result = await response.json();
       if (!response.ok || !result.success) {
         throw new Error(result.error || "Enregistrement impossible");
