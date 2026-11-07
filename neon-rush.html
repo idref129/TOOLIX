@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>NEON RUSH</title>
+<style>
+*{box-sizing:border-box}
+body{
+ margin:0;background:#080817;color:white;
+ font-family:Arial,sans-serif;overflow:hidden;
+ touch-action:manipulation;
+}
+canvas{display:block;width:100vw;height:100dvh}
+#hud{
+ position:absolute;top:20px;width:100%;
+ display:flex;justify-content:space-around;
+ font-weight:bold;font-size:18px;
+ pointer-events:none;
+}
+#menu{
+ position:absolute;inset:0;display:flex;
+ align-items:center;justify-content:center;
+ flex-direction:column;text-align:center;
+ background:linear-gradient(transparent,#080817cc);
+}
+h1{
+ font-size:48px;color:#00f5ff;
+ text-shadow:0 0 20px #00f5ff;
+ margin:0 0 10px;
+}
+button{
+ border:0;border-radius:30px;padding:17px 42px;
+ background:linear-gradient(90deg,#00eaff,#a000ff);
+ color:white;font-weight:bold;font-size:20px;
+ margin-top:20px;
+}
+.small{color:#aaa;font-size:14px}
+</style>
+</head>
+<body>
+
+<canvas id="game"></canvas>
+
+<div id="hud">
+ <div>⭐ <span id="score">0</span></div>
+ <div>💎 <span id="coins">0</span></div>
+ <div>🏆 <span id="best">0</span></div>
+</div>
+
+<div id="menu">
+ <h1>NEON RUSH</h1>
+ <p id="message">Esquive. Survis. Bats ton record.</p>
+ <p class="small">Tape sur l'écran pour sauter</p>
+ <button id="start">JOUER</button>
+</div>
+
+<script>
+const canvas=document.getElementById("game");
+const ctx=canvas.getContext("2d");
+
+let W,H,dpr;
+function resize(){
+ dpr=Math.min(devicePixelRatio||1,2);
+ W=innerWidth;H=innerHeight;
+ canvas.width=W*dpr;
+ canvas.height=H*dpr;
+ ctx.setTransform(dpr,0,0,dpr,0,0);
+}
+addEventListener("resize",resize);
+resize();
+
+let state="menu";
+let score=0,coins=0;
+let best=Number(localStorage.getItem("neonBest")||0);
+document.getElementById("best").textContent=best;
+
+let player,obstacles,gems,particles;
+let speed=5,frame=0,ground;
+let last=0;
+
+function reset(){
+ score=0;coins=0;speed=5;frame=0;
+ ground=H-100;
+ player={x:W*.22,y:ground-35,w:35,h:35,vy:0,jumping:false};
+ obstacles=[];gems=[];particles=[];
+ updateHUD();
+}
+
+function updateHUD(){
+ document.getElementById("score").textContent=Math.floor(score);
+ document.getElementById("coins").textContent=coins;
+ document.getElementById("best").textContent=best;
+}
+
+function jump(){
+ if(state==="menu"){startGame();return}
+ if(state==="over"){startGame();return}
+ if(player&&!player.jumping){
+  player.vy=-13;
+  player.jumping=true;
+  burst(player.x,player.y+20,"#00eaff",8);
+ }
+}
+
+function startGame(){
+ reset();
+ state="playing";
+ document.getElementById("menu").style.display="none";
+}
+
+document.getElementById("start").onclick=startGame;
+canvas.addEventListener("pointerdown",jump);
+addEventListener("keydown",e=>{
+ if(e.code==="Space"||e.code==="ArrowUp"){
+  e.preventDefault();jump();
+ }
+});
+
+function burst(x,y,color,n){
+ for(let i=0;i<n;i++){
+  particles.push({
+   x,y,vx:(Math.random()-.5)*7,
+   vy:(Math.random()-.5)*7,
+   life:25,color
+  });
+ }
+}
+
+function spawn(){
+ const height=35+Math.random()*35;
+ obstacles.push({
+  x:W+30,y:ground-height,
+  w:25+Math.random()*20,h:height
+ });
+ if(Math.random()<.8){
+  gems.push({x:W+100,y:ground-90-Math.random()*65,r:10});
+ }
+}
+
+function gameOver(){
+ state="over";
+ if(score>best){
+  best=Math.floor(score);
+  localStorage.setItem("neonBest",best);
+ }
+ updateHUD();
+ document.getElementById("message").innerHTML=
+  "💥 GAME OVER<br>Score : "+Math.floor(score)+
+  "<br>Diamants : "+coins+"<br>Record : "+best;
+ document.getElementById("start").textContent="REJOUER";
+ document.getElementById("menu").style.display="flex";
+}
+
+function update(){
+ if(state!=="playing")return;
+ frame++;
+ score+=.12;
+ speed+=.0015;
+
+ if(frame%Math.max(35,Math.floor(95-speed*5))===0)spawn();
+
+ player.vy+=.65;
+ player.y+=player.vy;
+
+ if(player.y+player.h>=ground){
+  player.y=ground-player.h;
+  player.vy=0;
+  player.jumping=false;
+ }
+
+ obstacles.forEach(o=>o.x-=speed);
+ gems.forEach(g=>g.x-=speed);
+ obstacles=obstacles.filter(o=>o.x+o.w>0);
+
+ for(let i=gems.length-1;i>=0;i--){
+  const g=gems[i];
+  if(Math.hypot(player.x+17-g.x,player.y+17-g.y)<27){
+   coins++;
+   burst(g.x,g.y,"#ffe600",12);
+   gems.splice(i,1);
+  }
+ }
+
+ for(const o of obstacles){
+  if(player.x+player.w-5>o.x&&
+     player.x+5<o.x+o.w&&
+     player.y+player.h-5>o.y){
+   gameOver();
+   return;
+  }
+ }
+
+ particles.forEach(p=>{
+  p.x+=p.vx;p.y+=p.vy;p.life--;
+ });
+ particles=particles.filter(p=>p.life>0);
+
+ updateHUD();
+}
+
+function draw(){
+ ctx.clearRect(0,0,W,H);
+
+ const bg=ctx.createLinearGradient(0,0,0,H);
+ bg.addColorStop(0,"#101034");
+ bg.addColorStop(1,"#080817");
+ ctx.fillStyle=bg;
+ ctx.fillRect(0,0,W,H);
+
+ // étoiles
+ for(let i=0;i<45;i++){
+  const x=(i*137+frame*.25)%(W+20);
+  const y=(i*79)%Math.max(1,H*.65);
+  ctx.fillStyle="#ffffff55";
+  ctx.fillRect(x,y,2,2);
+ }
+
+ ground=H-100;
+ ctx.fillStyle="#171744";
+ ctx.fillRect(0,ground,W,H-ground);
+ ctx.strokeStyle="#00eaff";
+ ctx.lineWidth=3;
+ ctx.shadowBlur=15;ctx.shadowColor="#00eaff";
+ ctx.beginPath();ctx.moveTo(0,ground);ctx.lineTo(W,ground);
+ ctx.stroke();
+ ctx.shadowBlur=0;
+
+ if(player){
+  // joueur
+  ctx.save();
+  ctx.shadowBlur=25;
+  ctx.shadowColor="#00eaff";
+  ctx.fillStyle="#00eaff";
+  ctx.beginPath();
+  ctx.roundRect(player.x,player.y,player.w,player.h,9);
+  ctx.fill();
+  ctx.fillStyle="white";
+  ctx.fillRect(player.x+22,player.y+8,5,5);
+  ctx.restore();
+ }
+
+ // obstacles
+ obstacles?.forEach(o=>{
+  ctx.fillStyle="#ff235c";
+  ctx.shadowColor="#ff235c";
+  ctx.shadowBlur=18;
+  ctx.fillRect(o.x,o.y,o.w,o.h);
+  ctx.shadowBlur=0;
+ });
+
+ // diamants
+ gems?.forEach(g=>{
+  ctx.save();
+  ctx.translate(g.x,g.y);
+  ctx.rotate(Math.PI/4);
+  ctx.fillStyle="#ffe600";
+  ctx.shadowColor="#ffe600";
+  ctx.shadowBlur=20;
+  ctx.fillRect(-g.r/2,-g.r/2,g.r,g.r);
+  ctx.restore();
+ });
+
+ // particules
+ particles?.forEach(p=>{
+  ctx.globalAlpha=p.life/25;
+  ctx.fillStyle=p.color;
+  ctx.fillRect(p.x,p.y,5,5);
+ });
+ ctx.globalAlpha=1;
+
+ if(state==="playing"){
+  requestAnimationFrame(draw);
+ }
+}
+
+function loop(t){
+ if(state==="playing"){
+  update();
+  draw();
+ }
+ requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+</script>
+</body>
+</html>
