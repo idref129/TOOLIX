@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>BERLIN LIFE - The Open City</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#17232b;color:white;font-family:Arial;overflow:hidden;touch-action:none}
+canvas{display:block;width:100vw;height:100dvh}
+#hud{position:absolute;top:10px;left:10px;right:10px;display:flex;justify-content:space-between;pointer-events:none;gap:8px}
+.panel{background:#101923dd;border:1px solid #ffffff30;border-radius:12px;padding:9px 12px;font-size:13px}
+#mission{position:absolute;top:62px;left:10px;background:#101923dd;padding:10px 13px;border-radius:10px;font-size:12px;max-width:230px}
+#message{position:absolute;top:42%;left:50%;transform:translate(-50%,-50%);background:#101923ee;border:1px solid #6bd5b2;border-radius:15px;padding:18px;width:85%;max-width:350px;text-align:center;display:none}
+#controls{position:absolute;bottom:15px;left:15px;right:15px;display:flex;justify-content:space-between;align-items:end;pointer-events:none}
+#pad{display:grid;grid-template-columns:48px 48px 48px;grid-template-rows:48px 48px 48px;gap:3px;pointer-events:auto}
+.ctrl{background:#142a36dd;border:1px solid #ffffff55;color:white;border-radius:12px;font-size:23px;touch-action:none}
+#up{grid-column:2}#left{grid-column:1;grid-row:2}#down{grid-column:2;grid-row:2}#right{grid-column:3;grid-row:2}
+#action{width:76px;height:76px;border-radius:50%;background:#087d71e8;border:2px solid #7ffff0;font-weight:bold;font-size:13px;pointer-events:auto}
+#toast{position:absolute;bottom:125px;left:50%;transform:translateX(-50%);background:#101923ee;padding:10px 15px;border-radius:12px;display:none;text-align:center;font-size:13px;max-width:85%}
+#map{position:absolute;right:12px;top:112px;width:105px;height:105px;border:2px solid #ffffff80;border-radius:10px;background:#101923;pointer-events:none}
+@media(min-width:800px){#pad,#action{opacity:.75}}
+</style>
+</head>
+<body>
+
+<canvas id="game"></canvas>
+
+<div id="hud">
+ <div class="panel">🏙️ BERLIN LIFE</div>
+ <div class="panel">💶 <span id="money">20</span> €</div>
+ <div class="panel">⭐ <span id="level">1</span></div>
+</div>
+
+<div id="mission">
+ <b>📋 MISSION</b><br>
+ <span id="missionText">Explore Berlin et trouve Max au parc.</span>
+</div>
+
+<canvas id="map" width="105" height="105"></canvas>
+
+<div id="toast"></div>
+
+<div id="message">
+ <h2 id="msgTitle">Berlin Life</h2>
+ <p id="msgText"></p>
+ <button class="ctrl" style="padding:10px 20px" onclick="closeMessage()">CONTINUER</button>
+</div>
+
+<div id="controls">
+ <div id="pad">
+  <button class="ctrl" id="up">▲</button>
+  <button class="ctrl" id="left">◀</button>
+  <button class="ctrl" id="down">▼</button>
+  <button class="ctrl" id="right">▶</button>
+ </div>
+ <button id="action">INTERAGIR</button>
+</div>
+
+<script>
+const canvas=document.getElementById("game");
+const ctx=canvas.getContext("2d");
+const mini=document.getElementById("map");
+const mctx=mini.getContext("2d");
+
+let W,H,dpr;
+function resize(){
+ dpr=Math.min(devicePixelRatio||1,2);
+ W=innerWidth;H=innerHeight;
+ canvas.width=W*dpr;
+ canvas.height=H*dpr;
+ ctx.setTransform(dpr,0,0,dpr,0,0);
+}
+addEventListener("resize",resize);
+resize();
+
+const T=64;
+const WORLD=64;
+const WORLDPIX=WORLD*T;
+
+let saved={};
+try{saved=JSON.parse(localStorage.getItem("berlinLife")||"{}")}catch(e){}
+
+const player={
+ x:saved.x||5*T+32,
+ y:saved.y||5*T+32,
+ speed:190,
+ money:saved.money??20,
+ level:1
+};
+
+let keys={};
+let camera={x:0,y:0};
+let mission=saved.mission||0;
+let posters=saved.posters||[];
+let messageOpen=false;
+let toastTimer=0;
+let gameTime=0;
+
+function save(){
+ localStorage.setItem("berlinLife",JSON.stringify({
+  x:player.x,y:player.y,money:player.money,
+  mission,posters
+ }));
+}
+
+const npcs=[
+ {x:12*T+32,y:10*T+32,name:"MAX",color:"#e4a45d",text:"Salut ! Bienvenue à Berlin ! Tu peux m'aider ? Il me manque 5 affiches pour mon festival.",type:"mission"},
+ {x:29*T+32,y:17*T+32,name:"LENA",color:"#e77ab2",text:"Le parc de Berlin est magnifique aujourd'hui !",type:"talk"},
+ {x:43*T+32,y:35*T+32,name:"KARL",color:"#85b9ff",text:"Tu as vu la Porte de Brandebourg ? C'est un monument incroyable !",type:"talk"},
+ {x:18*T+32,y:47*T+32,name:"EMMA",color:"#a4e58b",text:"Bienvenue dans mon quartier !",type:"talk"}
+];
+
+const postersWorld=[
+ {x:17*T+32,y:11*T+32},
+ {x:21*T+32,y:16*T+32},
+ {x:26*T+32,y:25*T+32},
+ {x:37*T+32,y:31*T+32},
+ {x:47*T+32,y:42*T+32},
+ {x:11*T+32,y:35*T+32},
+ {x:51*T+32,y:16*T+32}
+];
+
+function tile(x,y){
+ if(x<0||y<0||x>=WORLD||y>=WORLD)return "wall";
+
+ // Grande zone verte : parc central
+ if(x>=24&&x<=37&&y>=23&&y<=36)return "park";
+
+ // Grande place de la porte de Brandebourg
+ if(x>=3&&x<=10&&y>=3&&y<=10)return "plaza";
+
+ // Zone de la gare
+ if(x>=44&&x<=55&&y>=7&&y<=13)return "station";
+
+ // Rues principales
+ if(x%8===0||y%8===0)return "road";
+
+ // Trottoirs
+ if(x%8===1||y%8===1)return "sidewalk";
+
+ // Petits espaces verts
+ if((x*13+y*7)%31===0)return "tree";
+
+ return "building";
+}
+
+function solidAt(x,y){
+ const tx=Math.floor(x/T),ty=Math.floor(y/T);
+ let t=tile(tx,ty);
+ return ["building","wall","tree"].includes(t);
+}
+
+function canMove(x,y){
+ const r=13;
+ return !solidAt(x-r,y-r)&&!solidAt(x+r,y-r)&&
+        !solidAt(x-r,y+r)&&!solidAt(x+r,y+r);
+}
+
+function move(dx,dy,dt){
+ let nx=player.x+dx*player.speed*dt;
+ let ny=player.y+dy*player.speed*dt;
+
+ if(canMove(nx,player.y))player.x=nx;
+ if(canMove(player.x,ny))player.y=ny;
+
+ player.x=Math.max(20,Math.min(WORLDPIX-20,player.x));
+ player.y=Math.max(20,Math.min(WORLDPIX-20,player.y));
+}
+
+function rect(x,y,w,h,color){
+ ctx.fillStyle=color;
+ ctx.fillRect(x-camera.x,y-camera.y,w,h);
+}
+
+function circle(x,y,r,color){
+ ctx.fillStyle=color;
+ ctx.beginPath();
+ ctx.arc(x-camera.x,y-camera.y,r,0,Math.PI*2);
+ ctx.fill();
+}
+
+function drawBuilding(x,y){
+ const sx=x*T-camera.x,sy=y*T-camera.y;
+ ctx.fillStyle="#273c49";
+ ctx.fillRect(sx+3,sy+3,T-6,T-6);
+ ctx.fillStyle="#385465";
+ ctx.fillRect(sx+7,sy+7,T-14,T-14);
+
+ ctx.fillStyle="#a7d5e0";
+ for(let i=0;i<2;i++){
+  for(let j=0;j<2;j++){
+   ctx.fillRect(sx+13+i*23,sy+13+j*22,10,9);
+  }
+ }
+ ctx.fillStyle="#604c3c";
+ ctx.fillRect(sx+25,sy+42,14,19);
+}
+
+function drawTile(x,y,t){
+ const sx=x*T-camera.x,sy=y*T-camera.y;
+ if(sx<-T||sy<-T||sx>W||sy>H)return;
+
+ if(t==="road"){
+  rect(x*T,y*T,T,T,"#424a50");
+  ctx.strokeStyle="#ffffff35";
+  ctx.setLineDash([8,10]);
+  ctx.beginPath();
+  ctx.moveTo(sx+T/2,sy);
+  ctx.lineTo(sx+T/2,sy+T);
+  ctx.stroke();
+  ctx.setLineDash([]);
+ }
+ else if(t==="sidewalk"){
+  rect(x*T,y*T,T,T,"#92928b");
+  ctx.strokeStyle="#77766e";
+  ctx.strokeRect(sx,sy,T,T);
+ }
+ else if(t==="park"){
+  rect(x*T,y*T,T,T,"#39784f");
+  if((x+y)%5===0){
+   circle(x*T+15,y*T+18,8,"#285b3b");
+   circle(x*T+40,y*T+44,7,"#285b3b");
+  }
+ }
+ else if(t==="plaza"){
+  rect(x*T,y*T,T,T,"#b6a99a");
+  ctx.strokeStyle="#ffffff35";
+  ctx.strokeRect(sx+5,sy+5,T-10,T-10);
+ }
+ else if(t==="station"){
+  rect(x*T,y*T,T,T,"#697b89");
+  rect(x*T+8,y*T+8,48,48,"#a9bdc8");
+  rect(x*T+14,y*T+14,36,36,"#415966");
+ }
+ else if(t==="tree"){
+  rect(x*T,y*T,T,T,"#39784f");
+  circle(x*T+32,y*T+32,20,"#205c38");
+  circle(x*T+25,y*T+24,12,"#347d48");
+ }
+ else if(t==="building")drawBuilding(x,y);
+ else rect(x*T,y*T,T,T,"#17232b");
+}
+
+function drawCar(x,y,color,vertical){
+ ctx.save();
+ ctx.translate(x-camera.x,y-camera.y);
+ if(vertical)ctx.rotate(Math.PI/2);
+ ctx.fillStyle="#171c22";
+ ctx.fillRect(-24,-12,48,24);
+ ctx.fillStyle=color;
+ ctx.fillRect(-21,-10,42,20);
+ ctx.fillStyle="#a9dce9";
+ ctx.fillRect(-10,-8,18,16);
+ ctx.restore();
+}
+
+function drawLandmarks(){
+ // Porte de Brandebourg
+ let x=6*T-camera.x,y=6*T-camera.y;
+ ctx.fillStyle="#e8d2ad";
+ ctx.fillRect(x-48,y-20,96,48);
+ ctx.fillStyle="#8e7556";
+ for(let i=0;i<6;i++)ctx.fillRect(x-39+i*15,y-8,6,30);
+ ctx.fillStyle="#d7b990";
+ ctx.fillRect(x-52,y-27,104,9);
+ ctx.fillStyle="#ffffff";
+ ctx.font="bold 12px Arial";
+ ctx.textAlign="center";
+ ctx.fillText("BRANDENBURG GATE",x,y+45);
+
+ // Parc et lac
+ ctx.fillStyle="#438a70";
+ ctx.fillRect(27*T-camera.x,27*T-camera.y,6*T,4*T);
+ ctx.fillStyle="#55a8bb";
+ ctx.beginPath();
+ ctx.ellipse(30*T-camera.x,29*T-camera.y,85,43,.3,0,Math.PI*2);
+ ctx.fill();
+
+ // Gare
+ ctx.fillStyle="#d4dce0";
+ ctx.fillRect(47*T-camera.x,9*T-camera.y,6*T,2*T);
+ ctx.fillStyle="#384b58";
+ ctx.fillRect(48*T-camera.x,9*T-camera.y+15,4*T,45);
+ ctx.fillStyle="white";
+ ctx.font="bold 15px Arial";
+ ctx.textAlign="center";
+ ctx.fillText("BERLIN HBF",50*T-camera.x,8*T-camera.y);
+}
+
+function drawCars(){
+ for(let i=0;i<10;i++){
+  let x=(i*8+2)*T+32;
+  let y=(i*8+4)*T+32;
+  if(i%2===0)drawCar(x,y,"#d64e4e",false);
+  else drawCar(y,x,"#e3c34e",true);
+ }
+}
+
+function drawPosters(){
+ postersWorld.forEach((p,i)=>{
+  if(posters.includes(i))return;
+  let x=p.x-camera.x,y=p.y-camera.y;
+  if(x<-40||x>W+40||y<-40||y>H+40)return;
+  ctx.fillStyle="#f3d35b";
+  ctx.fillRect(x-9,y-12,18,24);
+  ctx.fillStyle="#242c32";
+  ctx.fillRect(x-5,y-7,10,3);
+  ctx.fillRect(x-5,y,10,3);
+  ctx.fillRect(x-5,y+7,7,2);
+ }
+ );
+}
+
+function drawNPCs(){
+ npcs.forEach(n=>{
+  circle(n.x,n.y,15,"#252c35");
+  circle(n.x,n.y-4,11,n.color);
+  ctx.fillStyle="white";
+  ctx.font="bold 10px Arial";
+  ctx.textAlign="center";
+  ctx.fillText(n.name,n.x-camera.x,n.y-camera.y-23);
+ });
+}
+
+function drawPlayer(){
+ const x=player.x-camera.x,y=player.y-camera.y;
+ circle(player.x,player.y+8,14,"#15242c");
+ circle(player.x,player.y-3,12,"#e5ad82");
+ ctx.fillStyle="#294c8a";
+ ctx.fillRect(x-10,y-1,20,17);
+ ctx.fillStyle="#263d65";
+ ctx.fillRect(x-10,y+13,8,9);
+ ctx.fillRect(x+2,y+13,8,9);
+ ctx.fillStyle="#171c24";
+ ctx.fillRect(x-5,y-6,3,3);
+ ctx.fillRect(x+3,y-6,3,3);
+}
+
+function drawMini(){
+ mctx.fillStyle="#18242c";
+ mctx.fillRect(0,0,105,105);
+ const scale=105/WORLDPIX;
+ for(let x=0;x<WORLD;x+=2){
+  for(let y=0;y<WORLD;y+=2){
+   let t=tile(x,y);
+   mctx.fillStyle=t==="road"?"#777":t==="park"?"#39784f":t==="building"?"#32414c":"#999";
+   mctx.fillRect(x*T*scale,y*T*scale,2,2);
+  }
+ }
+ mctx.fillStyle="#ffef7a";
+ mctx.beginPath();
+ mctx.arc(player.x*scale,player.y*scale,3,0,Math.PI*2);
+ mctx.fill();
+}
+
+function draw(){
+ camera.x=Math.max(0,Math.min(WORLDPIX-W,player.x-W/2));
+ camera.y=Math.max(0,Math.min(WORLDPIX-H,player.y-H/2));
+
+ ctx.fillStyle="#17232b";
+ ctx.fillRect(0,0,W,H);
+
+ let x0=Math.floor(camera.x/T),y0=Math.floor(camera.y/T);
+ let x1=Math.ceil((camera.x+W)/T),y1=Math.ceil((camera.y+H)/T);
+
+ for(let y=y0;y<=y1;y++){
+  for(let x=x0;x<=x1;x++)drawTile(x,y,tile(x,y));
+ }
+
+ drawLandmarks();
+ drawCars();
+ drawPosters();
+ drawNPCs();
+ drawPlayer();
+ drawMini();
+}
+
+function showToast(text){
+ const el=document.getElementById("toast");
+ el.textContent=text;
+ el.style.display="block";
+ clearTimeout(toastTimer);
+ toastTimer=setTimeout(()=>el.style.display="none",2500);
+}
+
+function openMessage(title,text){
+ document.getElementById("msgTitle").textContent=title;
+ document.getElementById("msgText").textContent=text;
+ document.getElementById("message").style.display="block";
+ messageOpen=true;
+}
+
+function closeMessage(){
+ document.getElementById("message").style.display="none";
+ messageOpen=false;
+}
+
+function interact(){
+ if(messageOpen){closeMessage();return}
+
+ let nearest=null,best=Infinity;
+ npcs.forEach(n=>{
+  let d=Math.hypot(n.x-player.x,n.y-player.y);
+  if(d<55&&d<best){nearest=n;best=d}
+ });
+
+ if(nearest){
+  if(nearest.type==="mission"&&mission===0){
+   openMessage("MAX - Le festival",
+    "Salut ! Peux-tu retrouver 5 affiches du festival dans la ville ? Elles sont jaunes. Reviens me voir après !");
+   mission=1;
+   document.getElementById("missionText").textContent="Trouve 5 affiches jaunes dans Berlin : "+posters.length+"/5";
+   save();
+  }else if(nearest.type==="mission"&&mission===1&&posters.length>=5){
+   player.money+=100;
+   mission=2;
+   document.getElementById("missionText").textContent="Mission terminée ! Explore librement Berlin.";
+   openMessage("MISSION TERMINÉE !","Bravo ! Max te donne 100 €. Tu peux continuer à explorer Berlin !");
+   save();updateHUD();
+  }else if(nearest.type==="mission"&&mission===1){
+   openMessage("MAX","Il te manque encore des affiches ! Tu en as trouvé "+posters.length+" sur 5.");
+  }else{
+   openMessage(nearest.name,nearest.text);
+  }
+  return;
+ }
+
+ for(let i=0;i<postersWorld.length;i++){
+  let p=postersWorld[i];
+  if(!posters.includes(i)&&Math.hypot(p.x-player.x,p.y-player.y)<45){
+   posters.push(i);
+   player.money+=5;
+   showToast("📜 Affiche trouvée ! +5 €");
+   if(mission===1){
+    document.getElementById("missionText").textContent="Trouve 5 affiches jaunes : "+Math.min(5,posters.length)+"/5";
+   }
+   save();updateHUD();
+   return;
+  }
+ }
+
+ let landmarks=[
+  {x:6*T,y:6*T,name:"Porte de Brandebourg",text:"La célèbre Porte de Brandebourg ! Un symbole de Berlin et de son histoire."},
+  {x:50*T,y:10*T,name:"Gare centrale",text:"Berlin Hauptbahnhof. Des voyageurs arrivent et partent chaque jour."},
+  {x:30*T,y:29*T,name:"Parc central",text:"Un endroit idéal pour se détendre et profiter du soleil."}
+ ];
+ let place=landmarks.find(l=>Math.hypot(l.x-player.x,l.y-player.y)<100);
+ if(place){openMessage(place.name,place.text);return}
+ showToast("Il n'y a rien à faire ici pour le moment.");
+}
+
+function updateHUD(){
+ document.getElementById("money").textContent=player.money;
+ document.getElementById("level").textContent=player.level;
+}
+updateHUD();
+
+// Clavier
+addEventListener("keydown",e=>{
+ if(e.key==="ArrowUp"||e.key==="w")keys.up=true;
+ if(e.key==="ArrowDown"||e.key==="s")keys.down=true;
+ if(e.key==="ArrowLeft"||e.key==="a")keys.left=true;
+ if(e.key==="ArrowRight"||e.key==="d")keys.right=true;
+ if(e.key==="e"||e.key==="Enter")interact();
+});
+addEventListener("keyup",e=>{
+ if(e.key==="ArrowUp"||e.key==="w")keys.up=false;
+ if(e.key==="ArrowDown"||e.key==="s")keys.down=false;
+ if(e.key==="ArrowLeft"||e.key==="a")keys.left=false;
+ if(e.key==="ArrowRight"||e.key==="d")keys.right=false;
+});
+
+// Boutons tactiles
+function bindButton(id,key){
+ const el=document.getElementById(id);
+ el.addEventListener("pointerdown",e=>{
+  e.preventDefault();keys[key]=true;
+  el.setPointerCapture(e.pointerId);
+ });
+ el.addEventListener("pointerup",()=>keys[key]=false);
+ el.addEventListener("pointercancel",()=>keys[key]=false);
+ el.addEventListener("lostpointercapture",()=>keys[key]=false);
+}
+bindButton("up","up");
+bindButton("down","down");
+bindButton("left","left");
+bindButton("right","right");
+
+document.getElementById("action").addEventListener("pointerdown",e=>{
+ e.preventDefault();interact();
+});
+
+let last=performance.now();
+function loop(now){
+ let dt=Math.min((now-last)/1000,.05);
+ last=now;
+
+ if(!messageOpen){
+  let dx=(keys.right?1:0)-(keys.left?1:0);
+  let dy=(keys.down?1:0)-(keys.up?1:0);
+  if(dx&&dy){dx*=.707;dy*=.707}
+  move(dx,dy,dt);
+ }
+ draw();
+ requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
